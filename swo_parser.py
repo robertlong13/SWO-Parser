@@ -5,6 +5,7 @@
 
 import socket
 import time
+import argparse
 
 class Stream:
     """
@@ -132,48 +133,53 @@ class StreamManager:
    
 
 #### Main program ####
+if __name__ == "__main__":
+    # Parse args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--port", help="specify openocd tcl port")
+    args = parser.parse_args()
 
-# Set up the socket to the OpenOCD Tcl server
-HOST = 'localhost'
-PORT = 6666
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcl_socket:
-    tcl_socket.connect((HOST, PORT))
-    tcl_socket.settimeout(0)
-    
-    # Create a stream manager and add three streams
-    streams = StreamManager()
-    streams.add_stream(Stream(0, '', tcl_socket))
-    streams.add_stream(Stream(1, 'WARNING: '))
-    streams.add_stream(Stream(2, 'ERROR: ', tcl_socket))
-    
-    # Enable the tcl_trace output
-    tcl_socket.sendall(b'tcl_trace on\n\x1a')
+    # Set up the socket to the OpenOCD Tcl server
+    HOST = 'localhost'
+    PORT = 6666 if (args.port == None) else int(args.port)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcl_socket:
+        tcl_socket.connect((HOST, PORT))
+        tcl_socket.settimeout(0)
 
-    
-    tcl_buf = b''
-    while True:
-        # Wait for new data from the socket
-        data = b''
-        while len(data) == 0:
-            try:
-                data = tcl_socket.recv(1024)
-            except BlockingIOError:
-                time.sleep(0.1)
+        # Create a stream manager and add three streams
+        streams = StreamManager()
+        streams.add_stream(Stream(0, '', tcl_socket))
+        streams.add_stream(Stream(1, 'WARNING: '))
+        streams.add_stream(Stream(2, 'ERROR: ', tcl_socket))
 
-        tcl_buf = tcl_buf + data
+        # Enable the tcl_trace output
+        tcl_socket.sendall(b'tcl_trace on\n\x1a')
 
-        # Tcl messages are terminated with a 0x1A byte
-        temp = tcl_buf.split(b'\x1a',1)
-        while len(temp) == 2:
-            # Parse the Tcl message
-            streams.parse_tcl(temp[0])
-            
-            # Remove that message from tcl_buf and grab another message from
-            # the buffer if the is one
-            tcl_buf = temp[1]
+
+        tcl_buf = b''
+        while True:
+            # Wait for new data from the socket
+            data = b''
+            while len(data) == 0:
+                try:
+                    data = tcl_socket.recv(1024)
+                except BlockingIOError:
+                    time.sleep(0.1)
+
+            tcl_buf = tcl_buf + data
+
+            # Tcl messages are terminated with a 0x1A byte
             temp = tcl_buf.split(b'\x1a',1)
-    
-    
-    # Turn off the trace data before closing the port
-    # XXX: There currently isn't a way for the code to actually reach this line
-    tcl_socket.sendall(b'tcl_trace off\n\x1a')
+            while len(temp) == 2:
+                # Parse the Tcl message
+                streams.parse_tcl(temp[0])
+
+                # Remove that message from tcl_buf and grab another message from
+                # the buffer if the is one
+                tcl_buf = temp[1]
+                temp = tcl_buf.split(b'\x1a',1)
+
+
+        # Turn off the trace data before closing the port
+        # XXX: There currently isn't a way for the code to actually reach this line
+        tcl_socket.sendall(b'tcl_trace off\n\x1a')
